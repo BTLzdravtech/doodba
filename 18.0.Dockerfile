@@ -1,4 +1,4 @@
-FROM python:3.10.12-slim-bookworm AS base
+FROM python:3.10-slim-bookworm AS base
 
 EXPOSE 8069 8072
 
@@ -12,7 +12,6 @@ ARG LAST_SYSTEM_UID=499
 ARG LAST_SYSTEM_GID=499
 ARG FIRST_UID=500
 ARG FIRST_GID=500
-
 ENV DB_FILTER=.* \
     DEPTH_DEFAULT=1 \
     DEPTH_MERGE=100 \
@@ -39,15 +38,15 @@ ENV DB_FILTER=.* \
     WDB_WEB_PORT=1984 \
     WDB_WEB_SERVER=localhost
 
-
 # Other requirements and recommendations
 # See https://github.com/$ODOO_SOURCE/blob/$ODOO_VERSION/debian/control
 RUN echo "LAST_SYSTEM_UID=$LAST_SYSTEM_UID\nLAST_SYSTEM_GID=$LAST_SYSTEM_GID\nFIRST_UID=$FIRST_UID\nFIRST_GID=$FIRST_GID" >> /etc/adduser.conf \
-    && echo "SYS_UID_MAX $LAST_SYSTEM_UID\nSYS_GID_MAX $LAST_SYSTEM_GID" >> /etc/login.defs \
-    && sed -i -E "s/^UID_MIN\s+[0-9]+.*/UID_MIN $FIRST_UID/;s/^GID_MIN\s+[0-9]+.*/GID_MIN $FIRST_GID/" /etc/login.defs \
+    && echo "SYS_UID_MAX   $LAST_SYSTEM_UID\nSYS_GID_MAX   $LAST_SYSTEM_GID" >> /etc/login.defs \
+    && sed -i -E "s/^UID_MIN\s+[0-9]+.*/UID_MIN   $FIRST_UID/;s/^GID_MIN\s+[0-9]+.*/GID_MIN   $FIRST_GID/" /etc/login.defs \
     && useradd --system -u $LAST_SYSTEM_UID -s /usr/sbin/nologin -d / systemd-network \
     && apt-get -qq update \
-    && apt-get install -yqq --no-install-recommends curl \
+    && apt-get install -yqq --no-install-recommends \
+        curl \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         WKHTMLTOPDF_CHECKSUM=$WKHTMLTOPDF_ARM64_CHECKSUM; \
     elif [ "$TARGETARCH" = "amd64" ]; then \
@@ -91,8 +90,8 @@ COPY lib/doodbalib /usr/local/lib/python3.10/site-packages/doodbalib
 COPY build.d common/build.d
 COPY conf.d common/conf.d
 COPY entrypoint.d common/entrypoint.d
-RUN rm -f /opt/odoo/common/conf.d/60-geoip-ge17.conf \
-    && mv /opt/odoo/common/conf.d/60-geoip-lt17.conf /opt/odoo/common/conf.d/60-geoip.conf
+RUN rm -f /opt/odoo/common/conf.d/60-geoip-lt17.conf \
+    && mv /opt/odoo/common/conf.d/60-geoip-ge17.conf /opt/odoo/common/conf.d/60-geoip.conf
 RUN mkdir -p auto/addons auto/geoip custom/src/private \
     && ln /usr/local/bin/direxec common/entrypoint \
     && ln /usr/local/bin/direxec common/build \
@@ -115,7 +114,7 @@ RUN python -m venv --system-site-packages /qa/venv \
     && mkdir -p /qa/artifacts
 
 ARG ODOO_SOURCE=OCA/OCB
-ARG ODOO_VERSION=16.0
+ARG ODOO_VERSION=18.0
 ENV ODOO_VERSION="$ODOO_VERSION"
 
 # Install Odoo hard & soft dependencies, and Doodba utilities
@@ -144,9 +143,8 @@ RUN build_deps=" \
     && curl -o requirements.txt https://raw.githubusercontent.com/$ODOO_SOURCE/$ODOO_VERSION/requirements.txt \
     &&  \
         if [ "$TARGETARCH" = "arm64" ]; then \
-        echo "Upgrading odoo requirements.txt with gevent==21.12.0 and greenlet==1.1.0 (minimum version compatible with arm64)" && \
-        sed -i 's/gevent==[0-9\.]*/gevent==21.12.0/' requirements.txt && \
-        sed -i 's/greenlet==[0-9\.]*/greenlet==1.1.0/' requirements.txt; \
+        echo "Upgrading odoo requirements.txt with gevent==21.12.0 (minimum version compatible with arm64)" && \
+        sed -i 's/gevent==[0-9\.]*/gevent==21.12.0/' requirements.txt; \
     fi \
     && pip install -r requirements.txt \
         'websocket-client~=0.56' \
@@ -185,3 +183,80 @@ LABEL org.label-schema.schema-version="$VERSION" \
       org.label-schema.build-date="$BUILD_DATE" \
       org.label-schema.vcs-ref="$VCS_REF" \
       org.label-schema.vcs-url="https://github.com/Tecnativa/doodba"
+
+# Onbuild version, with all the magic
+FROM base AS onbuild
+
+# Enable setting custom uids for odoo user during build of scaffolds
+ONBUILD ARG UID=1000
+ONBUILD ARG GID=1000
+
+# Enable Odoo user and filestore
+ONBUILD RUN groupadd -g $GID odoo -o \
+    && useradd -l -md /home/odoo -s /bin/false -u $UID -g $GID odoo \
+    && mkdir -p /var/lib/odoo \
+    && chown -R odoo:odoo /var/lib/odoo /qa/artifacts \
+    && chmod a=rwX /qa/artifacts \
+    && sync
+
+# Subimage triggers
+ONBUILD ENTRYPOINT ["/opt/odoo/common/entrypoint"]
+ONBUILD CMD ["/usr/local/bin/odoo"]
+ONBUILD ARG AGGREGATE=true
+ONBUILD ARG DEFAULT_REPO_PATTERN="https://github.com/OCA/{}.git"
+ONBUILD ARG DEFAULT_REPO_PATTERN_ODOO="https://github.com/OCA/OCB.git"
+ONBUILD ARG DEPTH_DEFAULT=1
+ONBUILD ARG DEPTH_MERGE=100
+ONBUILD ARG CLEAN=true
+ONBUILD ARG COMPILE=true
+ONBUILD ARG FONT_MONO="Liberation Mono"
+ONBUILD ARG FONT_SANS="Liberation Sans"
+ONBUILD ARG FONT_SERIF="Liberation Serif"
+ONBUILD ARG PIP_INSTALL_ODOO=true
+ONBUILD ARG ADMIN_PASSWORD=admin
+ONBUILD ARG SMTP_SERVER=smtp
+ONBUILD ARG SMTP_PORT=25
+ONBUILD ARG SMTP_USER=false
+ONBUILD ARG SMTP_PASSWORD=false
+ONBUILD ARG SMTP_SSL=false
+ONBUILD ARG EMAIL_FROM=""
+ONBUILD ARG PROXY_MODE=false
+ONBUILD ARG WITHOUT_DEMO=all
+ONBUILD ARG PGUSER=odoo
+ONBUILD ARG PGPASSWORD=odoopassword
+ONBUILD ARG PGHOST=db
+ONBUILD ARG PGPORT=5432
+ONBUILD ARG PGDATABASE=prod
+
+# Config variables
+ONBUILD ENV ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+            DEFAULT_REPO_PATTERN="$DEFAULT_REPO_PATTERN" \
+            DEFAULT_REPO_PATTERN_ODOO="$DEFAULT_REPO_PATTERN_ODOO" \
+            UNACCENT="$UNACCENT" \
+            PGUSER="$PGUSER" \
+            PGPASSWORD="$PGPASSWORD" \
+            PGHOST="$PGHOST" \
+            PGPORT=$PGPORT \
+            PGDATABASE="$PGDATABASE" \
+            PROXY_MODE="$PROXY_MODE" \
+            SMTP_SERVER="$SMTP_SERVER" \
+            SMTP_PORT=$SMTP_PORT \
+            SMTP_USER="$SMTP_USER" \
+            SMTP_PASSWORD="$SMTP_PASSWORD" \
+            SMTP_SSL="$SMTP_SSL" \
+            EMAIL_FROM="$EMAIL_FROM" \
+            WITHOUT_DEMO="$WITHOUT_DEMO"
+ONBUILD ARG LOCAL_CUSTOM_DIR=./custom
+ONBUILD COPY --chown=root:odoo $LOCAL_CUSTOM_DIR /opt/odoo/custom
+
+# https://docs.python.org/3/library/logging.html#levels
+ONBUILD ARG LOG_LEVEL=INFO
+ONBUILD RUN [ -d ~root/.ssh ] && rm -r ~root/.ssh; \
+            mkdir -p /opt/odoo/custom/ssh \
+            && ln -s /opt/odoo/custom/ssh ~root/.ssh \
+            && chmod -R u=rwX,go= /opt/odoo/custom/ssh \
+            && sync
+ONBUILD ARG DB_VERSION=latest
+ONBUILD RUN /opt/odoo/common/build && sync
+ONBUILD VOLUME ["/var/lib/odoo"]
+ONBUILD USER odoo
