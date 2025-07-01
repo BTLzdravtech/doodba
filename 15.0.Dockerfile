@@ -57,8 +57,8 @@ RUN apt-get -qq update \
     && echo "Expected wkhtmltox checksum: ${WKHTMLTOPDF_CHECKSUM}" \
     && echo "Computed wkhtmltox checksum: $(sha256sum wkhtmltox.deb | awk '{ print $1 }')" \
     && echo "${WKHTMLTOPDF_CHECKSUM} wkhtmltox.deb" | sha256sum -c - \
+    && (dpkg -i wkhtmltox.deb || apt-get -y install -f) \
     && apt-get install -yqq --no-install-recommends \
-        ./wkhtmltox.deb \
         chromium \
         ffmpeg \
         fonts-liberation2 \
@@ -136,14 +136,10 @@ RUN build_deps=" \
         zlib1g-dev \
     " \
     && apt-get update \
-    && apt-get install -yqq --no-install-recommends $build_deps \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -yqq --no-install-recommends $build_deps \
     && curl -o requirements.txt https://raw.githubusercontent.com/$ODOO_SOURCE/$ODOO_VERSION/requirements.txt \
-    &&  \
-        if [ "$TARGETARCH" = "arm64" ]; then \
-        echo "Upgrading odoo requirements.txt with gevent==21.12.0 and greenlet==1.1.0 (minimum versions compatible with arm64)" && \
-        sed -i 's/gevent==[0-9\.]*/gevent==21.12.0/' requirements.txt && \
-        sed -i 's/greenlet==[0-9\.]*/greenlet==1.1.0/' requirements.txt; \
-    fi \
+    && echo "Setting gevent and greenlet versions to 21.12.0 and 1.1.0 (compatible with Debian Bullseye)" \
+    && sed -i -E "s/(gevent==)[0-9\.]+/\121.12.0/; s/(greenlet==)[0-9\.]+/\11.1.0/" requirements.txt \
     && pip install -r requirements.txt \
         'websocket-client~=0.56' \
         astor \
