@@ -172,6 +172,9 @@ RUN build_deps=" \
     && apt-get autopurge -yqq \
     && rm -Rf /var/lib/apt/lists/* /tmp/*
 
+RUN curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && \
+    chmod +x /usr/local/bin/mc
+
 # Metadata
 ARG VCS_REF
 ARG BUILD_DATE
