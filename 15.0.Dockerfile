@@ -71,7 +71,7 @@ RUN apt-get -qq update \
         openssh-client \
         telnet \
         vim \
-    && echo 'deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main' >> /etc/apt/sources.list.d/postgresql.list \
+    && echo 'deb https://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main' >> /etc/apt/sources.list.d/postgresql.list \
     && curl -SL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
     && apt-get update \
     && curl --silent -L --output geoipupdate_${GEOIP_UPDATER_VERSION}_linux_${TARGETARCH}.deb https://github.com/maxmind/geoipupdate/releases/download/v${GEOIP_UPDATER_VERSION}/geoipupdate_${GEOIP_UPDATER_VERSION}_linux_${TARGETARCH}.deb \
@@ -139,7 +139,9 @@ RUN build_deps=" \
     && DEBIAN_FRONTEND=noninteractive apt-get install -yqq --no-install-recommends $build_deps \
     && curl -o requirements.txt https://raw.githubusercontent.com/$ODOO_SOURCE/$ODOO_VERSION/requirements.txt \
     && echo "Setting gevent and greenlet versions to 21.12.0 and 1.1.0 (compatible with Debian Bullseye)" \
-    && sed -i -E "s/(gevent==)[0-9\.]+/\121.12.0/; s/(greenlet==)[0-9\.]+/\11.1.0/" requirements.txt \
+    && sed -i -E "s/(gevent==)[0-9\.]+/\121.12.0/; \
+             s/(greenlet==)[0-9\.]+/\11.1.0/; \
+             s/(reportlab==)[0-9\.]+/reportlab==3.6.13/" requirements.txt \
     && pip install -r requirements.txt \
         'websocket-client~=0.56' \
         astor \

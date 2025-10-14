@@ -1,4 +1,4 @@
-FROM python:3.12.3-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS base
 
 EXPOSE 8069 8072
 
@@ -23,7 +23,7 @@ ENV DB_FILTER=.* \
     LC_ALL=C.UTF-8 \
     LIST_DB=false \
     NODE_PATH=/usr/local/lib/node_modules:/usr/lib/node_modules \
-    OPENERP_SERVER=/opt/odoo/auto/odoo.conf \
+    ODOO_RC=/opt/odoo/auto/odoo.conf \
     PATH="/home/odoo/.local/bin:$PATH" \
     PIP_NO_CACHE_DIR=0 \
     DEBUGPY_ARGS="--listen 0.0.0.0:6899 --wait-for-client" \
@@ -114,7 +114,7 @@ RUN python -m venv --system-site-packages /qa/venv \
     && mkdir -p /qa/artifacts
 
 ARG ODOO_SOURCE=OCA/OCB
-ARG ODOO_VERSION=18.0
+ARG ODOO_VERSION=19.0
 ENV ODOO_VERSION="$ODOO_VERSION"
 
 # Install Odoo hard & soft dependencies, and Doodba utilities
@@ -141,8 +141,6 @@ RUN build_deps=" \
     && apt-get update \
     && apt-get install -yqq --no-install-recommends $build_deps \
     && curl -o requirements.txt https://raw.githubusercontent.com/$ODOO_SOURCE/$ODOO_VERSION/requirements.txt \
-    # disable gevent version recommendation from odoo and use 22.10.2 used in debian bookworm as python3-gevent
-    && sed -i -E "s/(gevent==)21\.8\.0( ; sys_platform != 'win32' and python_version == '3.10')/\122.10.2\2/;s/(greenlet==)1.1.2( ; sys_platform != 'win32' and python_version == '3.10')/\12.0.2\2/" requirements.txt \
     # need to upgrade setuptools, since the fixes for CVE-2024-6345 rolled out in base images we get errors "error: invalid command 'bdist_wheel'"
     && pip install --upgrade setuptools \
     && pip install -r requirements.txt \
@@ -172,9 +170,6 @@ RUN build_deps=" \
     && apt-get autopurge -yqq \
     && rm -Rf /var/lib/apt/lists/* /tmp/*
 
-RUN curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && \
-    chmod +x /usr/local/bin/mc
-
 # Metadata
 ARG VCS_REF
 ARG BUILD_DATE
@@ -185,3 +180,80 @@ LABEL org.label-schema.schema-version="$VERSION" \
       org.label-schema.build-date="$BUILD_DATE" \
       org.label-schema.vcs-ref="$VCS_REF" \
       org.label-schema.vcs-url="https://github.com/Tecnativa/doodba"
+
+# Onbuild version, with all the magic
+FROM base AS onbuild
+
+# Enable setting custom uids for odoo user during build of scaffolds
+ONBUILD ARG UID=1000
+ONBUILD ARG GID=1000
+
+# Enable Odoo user and filestore
+ONBUILD RUN groupadd -g $GID odoo -o \
+    && useradd -l -md /home/odoo -s /bin/false -u $UID -g $GID odoo \
+    && mkdir -p /var/lib/odoo \
+    && chown -R odoo:odoo /var/lib/odoo /qa/artifacts \
+    && chmod a=rwX /qa/artifacts \
+    && sync
+
+# Subimage triggers
+ONBUILD ENTRYPOINT ["/opt/odoo/common/entrypoint"]
+ONBUILD CMD ["/usr/local/bin/odoo"]
+ONBUILD ARG AGGREGATE=true
+ONBUILD ARG DEFAULT_REPO_PATTERN="https://github.com/OCA/{}.git"
+ONBUILD ARG DEFAULT_REPO_PATTERN_ODOO="https://github.com/OCA/OCB.git"
+ONBUILD ARG DEPTH_DEFAULT=1
+ONBUILD ARG DEPTH_MERGE=100
+ONBUILD ARG CLEAN=true
+ONBUILD ARG COMPILE=true
+ONBUILD ARG FONT_MONO="Liberation Mono"
+ONBUILD ARG FONT_SANS="Liberation Sans"
+ONBUILD ARG FONT_SERIF="Liberation Serif"
+ONBUILD ARG PIP_INSTALL_ODOO=true
+ONBUILD ARG ADMIN_PASSWORD=admin
+ONBUILD ARG SMTP_SERVER=smtp
+ONBUILD ARG SMTP_PORT=25
+ONBUILD ARG SMTP_USER=false
+ONBUILD ARG SMTP_PASSWORD=false
+ONBUILD ARG SMTP_SSL=false
+ONBUILD ARG EMAIL_FROM=""
+ONBUILD ARG PROXY_MODE=false
+ONBUILD ARG WITHOUT_DEMO=all
+ONBUILD ARG PGUSER=odoo
+ONBUILD ARG PGPASSWORD=odoopassword
+ONBUILD ARG PGHOST=db
+ONBUILD ARG PGPORT=5432
+ONBUILD ARG PGDATABASE=prod
+
+# Config variables
+ONBUILD ENV ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+            DEFAULT_REPO_PATTERN="$DEFAULT_REPO_PATTERN" \
+            DEFAULT_REPO_PATTERN_ODOO="$DEFAULT_REPO_PATTERN_ODOO" \
+            UNACCENT="$UNACCENT" \
+            PGUSER="$PGUSER" \
+            PGPASSWORD="$PGPASSWORD" \
+            PGHOST="$PGHOST" \
+            PGPORT=$PGPORT \
+            PGDATABASE="$PGDATABASE" \
+            PROXY_MODE="$PROXY_MODE" \
+            SMTP_SERVER="$SMTP_SERVER" \
+            SMTP_PORT=$SMTP_PORT \
+            SMTP_USER="$SMTP_USER" \
+            SMTP_PASSWORD="$SMTP_PASSWORD" \
+            SMTP_SSL="$SMTP_SSL" \
+            EMAIL_FROM="$EMAIL_FROM" \
+            WITHOUT_DEMO="$WITHOUT_DEMO"
+ONBUILD ARG LOCAL_CUSTOM_DIR=./custom
+ONBUILD COPY --chown=root:odoo $LOCAL_CUSTOM_DIR /opt/odoo/custom
+
+# https://docs.python.org/3/library/logging.html#levels
+ONBUILD ARG LOG_LEVEL=INFO
+ONBUILD RUN [ -d ~root/.ssh ] && rm -r ~root/.ssh; \
+            mkdir -p /opt/odoo/custom/ssh \
+            && ln -s /opt/odoo/custom/ssh ~root/.ssh \
+            && chmod -R u=rwX,go= /opt/odoo/custom/ssh \
+            && sync
+ONBUILD ARG DB_VERSION=latest
+ONBUILD RUN /opt/odoo/common/build && sync
+ONBUILD VOLUME ["/var/lib/odoo"]
+ONBUILD USER odoo
