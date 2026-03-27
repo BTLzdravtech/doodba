@@ -162,6 +162,7 @@ RUN build_deps=" \
         pudb \
         pyOpenSSL \
         python-magic \
+        uv \
         watchdog \
         wdb \
     && (python3 -m compileall -q /usr/local/lib/python3.12/ || true) \
