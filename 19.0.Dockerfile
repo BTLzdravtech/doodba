@@ -68,6 +68,7 @@ RUN echo "LAST_SYSTEM_UID=$LAST_SYSTEM_UID\nLAST_SYSTEM_GID=$LAST_SYSTEM_GID\nFI
         gettext \
         git \
         gnupg2 \
+        jq \
         locales-all \
         nano \
         npm \
@@ -117,6 +118,10 @@ ARG ODOO_SOURCE=OCA/OCB
 ARG ODOO_VERSION=19.0
 ENV ODOO_VERSION="$ODOO_VERSION"
 
+# Install Claude Code
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && ln -s /root/.local/bin/claude /usr/local/bin/claude
+
 # Install Odoo hard & soft dependencies, and Doodba utilities
 RUN build_deps=" \
         build-essential \
@@ -160,6 +165,7 @@ RUN build_deps=" \
         pudb \
         pyOpenSSL \
         python-magic \
+        uv \
         watchdog \
         wdb \
     && (python3 -m compileall -q /usr/local/lib/python3.12/ || true) \
